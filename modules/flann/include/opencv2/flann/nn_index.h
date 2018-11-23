@@ -50,6 +50,14 @@ class NNIndex
 
 public:
 
+    virtual void getHashVal(const unsigned char* vec, std::vector<uint32_t> &hashvals){};
+    virtual void addData(const unsigned char* vec, int idx){};
+    virtual void getNeighborsByHash(std::vector<uint32_t> hashvals, int *vec, int vec_actual_count, int *topK, int &idx, int tableThreshold){};
+    virtual void getNeighborsByHash(std::vector<uint32_t> hashvals, std::unordered_map<int, int> &matchMap, int *topK, int &idx, int tableThreshold){};
+    
+    virtual void getAllBuckets(std::vector<std::unordered_map<uint32_t, std::vector<uint32_t> > > &buckets){};
+    virtual void copyBuckets(std::vector<std::unordered_map<uint32_t, std::vector<uint32_t> > > buckets, int &accKptIndex){};
+    
     virtual ~NNIndex() {}
 
     /**

@@ -40,11 +40,12 @@
 #include <iomanip>
 #include <limits.h>
 // TODO as soon as we use C++0x, use the code in USE_UNORDERED_MAP
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+//#ifdef __GXX_EXPERIMENTAL_CXX0X__
+//#  define USE_UNORDERED_MAP 1
+//#else
+//#  define USE_UNORDERED_MAP 0
+//#endif
 #  define USE_UNORDERED_MAP 1
-#else
-#  define USE_UNORDERED_MAP 0
-#endif
 #if USE_UNORDERED_MAP
 #include <unordered_map>
 #else
@@ -69,7 +70,7 @@ namespace lsh
 typedef uint32_t FeatureIndex;
 /** The id from which we can get a bucket back in an LSH table
  */
-typedef unsigned int BucketKey;
+typedef uint32_t BucketKey;
 
 /** A bucket in an LSH table
  */
@@ -81,16 +82,16 @@ typedef std::vector<FeatureIndex> Bucket;
  */
 struct LshStats
 {
-    std::vector<unsigned int> bucket_sizes_;
-    size_t n_buckets_;
-    size_t bucket_size_mean_;
-    size_t bucket_size_median_;
-    size_t bucket_size_min_;
-    size_t bucket_size_max_;
-    size_t bucket_size_std_dev;
+    std::vector<uint32_t> bucket_sizes_;
+    uint32_t n_buckets_;
+    uint32_t bucket_size_mean_;
+    uint32_t bucket_size_median_;
+    uint32_t bucket_size_min_;
+    uint32_t bucket_size_max_;
+    uint32_t bucket_size_std_dev;
     /** Each contained vector contains three value: beginning/end for interval, number of elements in the bin
      */
-    std::vector<std::vector<unsigned int> > size_histogram_;
+    std::vector<std::vector<uint32_t> > size_histogram_;
 };
 
 /** Overload the << operator for LshStats
@@ -112,7 +113,7 @@ inline std::ostream& operator <<(std::ostream& out, const LshStats& stats)
     // Display the histogram
     out << std::endl << std::setw(w) << std::setiosflags(std::ios::right) << "histogram : "
     << std::setiosflags(std::ios::left);
-    for (std::vector<std::vector<unsigned int> >::const_iterator iterator = stats.size_histogram_.begin(), end =
+    for (std::vector<std::vector<uint32_t> >::const_iterator iterator = stats.size_histogram_.begin(), end =
              stats.size_histogram_.end(); iterator != end; ++iterator) out << (*iterator)[0] << "-" << (*iterator)[1] << ": " << (*iterator)[2] << ",  ";
 
     return out;
@@ -124,7 +125,7 @@ inline std::ostream& operator <<(std::ostream& out, const LshStats& stats)
 /** Lsh hash table. As its key is a sub-feature, and as usually
  * the size of it is pretty small, we keep it as a continuous memory array.
  * The value is an index in the corpus of features (we keep it as an unsigned
- * int for pure memory reasons, it could be a size_t)
+ * int for pure memory reasons, it could be a uint32_t)
  */
 template<typename ElementType>
 class LshTable
@@ -133,6 +134,7 @@ public:
     /** A container of all the feature indices. Optimized for space
      */
 #if USE_UNORDERED_MAP
+//    typedef std::unordered_map<BucketKey, Bucket> BucketsSpace;
     typedef std::unordered_map<BucketKey, Bucket> BucketsSpace;
 #else
     typedef std::map<BucketKey, Bucket> BucketsSpace;
@@ -156,7 +158,7 @@ public:
      * @param feature_size is the size of the feature (considered as a ElementType[])
      * @param key_size is the number of bits that are turned on in the feature
      */
-    LshTable(unsigned int feature_size, unsigned int key_size)
+    LshTable(uint32_t feature_size, uint32_t key_size)
     {
         feature_size_ = feature_size;
         (void)key_size;
@@ -164,11 +166,63 @@ public:
         assert(0);
     }
 
+    void saveBucket(FILE* stream) {
+        switch (speed_level_) {
+
+            case kHash:
+            {
+                unsigned count = unsigned(buckets_space_.size());
+                fwrite(&count, sizeof(unsigned), 1, stream);
+
+                // That means we have to check for the hash table for the presence of a key
+                for(BucketsSpace::iterator iter=buckets_space_.begin(); iter!=buckets_space_.end(); iter++) {
+                    
+                    std::vector<FeatureIndex> values = iter->second;
+                    
+                    BucketKey key = iter->first;
+                    fwrite((char *)&key, sizeof(BucketKey), 1, stream);
+                    unsigned valuesize = values.size();
+                    fwrite((char *)&valuesize, sizeof(unsigned), 1, stream);
+                    fwrite((char *)&values[0], sizeof(FeatureIndex)*valuesize, 1, stream);
+                }
+                break;
+            }
+        }
+    }
+    
+    void loadBucket(FILE* stream) {
+        switch (speed_level_) {
+
+            case kHash:
+            {
+                unsigned count;
+                fread(&count, sizeof(unsigned), 1, stream);
+                
+                for (unsigned j = 0; j != count; ++j) {
+                    
+                    BucketKey key;
+                    fread(&key, sizeof(BucketKey), 1, stream);
+                    unsigned valuesize;
+                    fread(&valuesize, sizeof(unsigned), 1, stream);
+                    std::vector<FeatureIndex> values;
+                    values.resize(valuesize);
+                    fread((char *)&values[0], sizeof(FeatureIndex)*valuesize, 1, stream);
+                    buckets_space_[key] = values;
+                }
+                break;
+            }
+        }
+    }
+    
+    std::unordered_map<uint32_t, std::vector<uint32_t> > &getBucket() {
+        return buckets_space_;
+    }
+    
     /** Add a feature to the table
      * @param value the value to store for that feature
      * @param feature the feature itself
      */
-    void add(unsigned int value, const ElementType* feature)
+    void add(uint32_t value, const ElementType* feature)
     {
         // Add the value to the corresponding bucket
         BucketKey key = (lsh::BucketKey)getKey(feature);
@@ -198,12 +252,12 @@ public:
     void add(Matrix<ElementType> dataset)
     {
 #if USE_UNORDERED_MAP
-        buckets_space_.rehash((buckets_space_.size() + dataset.rows) * 1.2);
+//        buckets_space_.rehash((buckets_space_.size() + dataset.rows) * 1.2);
 #endif
         // Add the features to the table
-        for (unsigned int i = 0; i < dataset.rows; ++i) add(i, dataset[i]);
+        for (uint32_t i = 0; i < dataset.rows; ++i) add(i, dataset[i]);
         // Now that the table is full, optimize it for speed/space
-        optimize();
+//        optimize();
     }
 
     /** Get a bucket given the key
@@ -239,7 +293,7 @@ public:
 
     /** Compute the sub-signature of a feature
      */
-    size_t getKey(const ElementType* /*feature*/) const
+    uint32_t getKey(const ElementType* /*feature*/) const
     {
         std::cerr << "LSH is not implemented for that type" << std::endl;
         assert(0);
@@ -264,11 +318,11 @@ private:
 
     /** Initialize some variables
      */
-    void initialize(size_t key_size)
+    void initialize(uint32_t key_size)
     {
-        const size_t key_size_lower_bound = 1;
-        //a value (size_t(1) << key_size) must fit the size_t type so key_size has to be strictly less than size of size_t
-        const size_t key_size_upper_bound = (std::min)(sizeof(BucketKey) * CHAR_BIT + 1, sizeof(size_t) * CHAR_BIT);
+        const uint32_t key_size_lower_bound = 1;
+        //a value (uint32_t(1) << key_size) must fit the uint32_t type so key_size has to be strictly less than size of uint32_t
+        const uint32_t key_size_upper_bound = (std::min)(sizeof(BucketKey) * CHAR_BIT + 1, sizeof(uint32_t) * CHAR_BIT);
         if (key_size < key_size_lower_bound || key_size >= key_size_upper_bound)
         {
             CV_Error(cv::Error::StsBadArg, cv::format("Invalid key_size (=%d). Valid values for your system are %d <= key_size < %d.", (int)key_size, (int)key_size_lower_bound, (int)key_size_upper_bound));
@@ -286,10 +340,10 @@ private:
         if (speed_level_ == kArray) return;
 
         // Use an array if it will be more than half full
-        if (buckets_space_.size() > ((size_t(1) << key_size_) / 2)) {
+        if (buckets_space_.size() > ((uint32_t(1) << key_size_) / 2)) {
             speed_level_ = kArray;
             // Fill the array version of it
-            buckets_speed_.resize(size_t(1) << key_size_);
+            buckets_speed_.resize(uint32_t(1) << key_size_);
             for (BucketsSpace::const_iterator key_bucket = buckets_space_.begin(); key_bucket != buckets_space_.end(); ++key_bucket) buckets_speed_[key_bucket->first] = key_bucket->second;
 
             // Empty the hash table
@@ -297,12 +351,12 @@ private:
             return;
         }
 
-        // If the bitset is going to use less than 10% of the RAM of the hash map (at least 1 size_t for the key and two
+        // If the bitset is going to use less than 10% of the RAM of the hash map (at least 1 uint32_t for the key and two
         // for the vector) or less than 512MB (key_size_ <= 30)
         if (((std::max(buckets_space_.size(), buckets_speed_.size()) * CHAR_BIT * 3 * sizeof(BucketKey)) / 10
-             >= (size_t(1) << key_size_)) || (key_size_ <= 32)) {
+             >= (uint32_t(1) << key_size_)) || (key_size_ <= 32)) {
             speed_level_ = kBitsetHash;
-            key_bitset_.resize(size_t(1) << key_size_);
+            key_bitset_.resize(uint32_t(1) << key_size_);
             key_bitset_.reset();
             // Try with the BucketsSpace
             for (BucketsSpace::const_iterator key_bucket = buckets_space_.begin(); key_bucket != buckets_space_.end(); ++key_bucket) key_bitset_.set(key_bucket->first);
@@ -331,31 +385,31 @@ private:
 
     /** The size of the sub-signature in bits
      */
-    unsigned int key_size_;
+    uint32_t key_size_;
 
-    unsigned int feature_size_;
+    uint32_t feature_size_;
 
     // Members only used for the unsigned char specialization
     /** The mask to apply to a feature to get the hash key
      * Only used in the unsigned char case
      */
-    std::vector<size_t> mask_;
+    std::vector<uint32_t> mask_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Specialization for unsigned char
 
 template<>
-inline LshTable<unsigned char>::LshTable(unsigned int feature_size, unsigned int subsignature_size)
+inline LshTable<unsigned char>::LshTable(uint32_t feature_size, uint32_t subsignature_size)
 {
     feature_size_ = feature_size;
     initialize(subsignature_size);
     // Allocate the mask
-    mask_ = std::vector<size_t>((feature_size * sizeof(char) + sizeof(size_t) - 1) / sizeof(size_t), 0);
+    mask_ = std::vector<uint32_t>((feature_size * sizeof(char) + sizeof(uint32_t) - 1) / sizeof(uint32_t), 0);
 
     // A bit brutal but fast to code
     std::vector<int> indices(feature_size * CHAR_BIT);
-    for (size_t i = 0; i < feature_size * CHAR_BIT; ++i) indices[i] = (int)i;
+    for (uint32_t i = 0; i < feature_size * CHAR_BIT; ++i) indices[i] = (int)i;
 #ifndef OPENCV_FLANN_USE_STD_RAND
     cv::randShuffle(indices);
 #else
@@ -363,21 +417,21 @@ inline LshTable<unsigned char>::LshTable(unsigned int feature_size, unsigned int
 #endif
 
     // Generate a random set of order of subsignature_size_ bits
-    for (unsigned int i = 0; i < key_size_; ++i) {
-        size_t index = indices[i];
+    for (uint32_t i = 0; i < key_size_; ++i) {
+        uint32_t index = indices[i];
 
         // Set that bit in the mask
-        size_t divisor = CHAR_BIT * sizeof(size_t);
-        size_t idx = index / divisor; //pick the right size_t index
-        mask_[idx] |= size_t(1) << (index % divisor); //use modulo to find the bit offset
+        uint32_t divisor = CHAR_BIT * sizeof(uint32_t);
+        uint32_t idx = index / divisor; //pick the right uint32_t index
+        mask_[idx] |= uint32_t(1) << (index % divisor); //use modulo to find the bit offset
     }
 
     // Set to 1 if you want to display the mask for debug
 #if 0
     {
-        size_t bcount = 0;
-        BOOST_FOREACH(size_t mask_block, mask_){
-            out << std::setw(sizeof(size_t) * CHAR_BIT / 4) << std::setfill('0') << std::hex << mask_block
+        uint32_t bcount = 0;
+        BOOST_FOREACH(uint32_t mask_block, mask_){
+            out << std::setw(sizeof(uint32_t) * CHAR_BIT / 4) << std::setfill('0') << std::hex << mask_block
                 << std::endl;
             bcount += __builtin_popcountll(mask_block);
         }
@@ -392,36 +446,36 @@ inline LshTable<unsigned char>::LshTable(unsigned int feature_size, unsigned int
  * @param feature the feature to analyze
  */
 template<>
-inline size_t LshTable<unsigned char>::getKey(const unsigned char* feature) const
+inline uint32_t LshTable<unsigned char>::getKey(const unsigned char* feature) const
 {
-    // no need to check if T is dividable by sizeof(size_t) like in the Hamming
+    // no need to check if T is dividable by sizeof(uint32_t) like in the Hamming
     // distance computation as we have a mask
     // FIXIT: This is bad assumption, because we reading tail bytes after of the allocated features buffer
-    const size_t* feature_block_ptr = reinterpret_cast<const size_t*> ((const void*)feature);
+    const uint32_t* feature_block_ptr = reinterpret_cast<const uint32_t*> ((const void*)feature);
 
     // Figure out the subsignature of the feature
     // Given the feature ABCDEF, and the mask 001011, the output will be
     // 000CEF
-    size_t subsignature = 0;
-    size_t bit_index = 1;
+    uint32_t subsignature = 0;
+    uint32_t bit_index = 1;
 
-    for (unsigned i = 0; i < feature_size_; i += sizeof(size_t)) {
+    for (unsigned i = 0; i < feature_size_; i += sizeof(uint32_t)) {
         // get the mask and signature blocks
-        size_t feature_block;
-        if (i <= feature_size_ - sizeof(size_t))
+        uint32_t feature_block;
+        if (i <= feature_size_ - sizeof(uint32_t))
         {
             feature_block = *feature_block_ptr;
         }
         else
         {
-            size_t tmp = 0;
+            uint32_t tmp = 0;
             memcpy(&tmp, feature_block_ptr, feature_size_ - i); // preserve bytes order
             feature_block = tmp;
         }
-        size_t mask_block = mask_[i / sizeof(size_t)];
+        uint32_t mask_block = mask_[i / sizeof(uint32_t)];
         while (mask_block) {
             // Get the lowest set bit in the mask block
-            size_t lowest_bit = mask_block & (-(ptrdiff_t)mask_block);
+            uint32_t lowest_bit = mask_block & (-(ptrdiff_t)mask_block);
             // Add it to the current subsignature if necessary
             subsignature += (feature_block & lowest_bit) ? bit_index : 0;
             // Reset the bit in the mask block
@@ -480,14 +534,14 @@ inline LshStats LshTable<unsigned char>::getStats() const
        stats.bucket_size_std_dev = stddev;*/
 
     // Include a histogram of the buckets
-    unsigned int bin_start = 0;
-    unsigned int bin_end = 20;
+    uint32_t bin_start = 0;
+    uint32_t bin_end = 20;
     bool is_new_bin = true;
-    for (std::vector<unsigned int>::iterator iterator = stats.bucket_sizes_.begin(), end = stats.bucket_sizes_.end(); iterator
+    for (std::vector<uint32_t>::iterator iterator = stats.bucket_sizes_.begin(), end = stats.bucket_sizes_.end(); iterator
          != end; )
         if (*iterator < bin_end) {
             if (is_new_bin) {
-                stats.size_histogram_.push_back(std::vector<unsigned int>(3, 0));
+                stats.size_histogram_.push_back(std::vector<uint32_t>(3, 0));
                 stats.size_histogram_.back()[0] = bin_start;
                 stats.size_histogram_.back()[1] = bin_end - 1;
                 is_new_bin = false;

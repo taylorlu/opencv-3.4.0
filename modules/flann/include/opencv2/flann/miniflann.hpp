@@ -45,6 +45,8 @@
 
 #include "opencv2/core.hpp"
 #include "opencv2/flann/defines.h"
+#include <unordered_map>
+#include <map>
 
 namespace cv
 {
@@ -149,7 +151,15 @@ public:
     CV_WRAP virtual void release();
     CV_WRAP cvflann::flann_distance_t getDistance() const;
     CV_WRAP cvflann::flann_algorithm_t getAlgorithm() const;
+    
+    CV_WRAP virtual void getHashVal(const unsigned char* vec, std::vector<uint32_t> &hashvals);
+    CV_WRAP virtual void addData(const unsigned char* vec, int idx);
+    CV_WRAP virtual void getNeighborsByHash(std::vector<uint32_t> hashvals, int *vec, int vec_actual_count, int *topK, int &idx, int tableThreshold);
+    CV_WRAP virtual void getNeighborsByHash(std::vector<uint32_t> hashvals, std::unordered_map<int, int> &matchMap, int *topK, int &idx, int tableThreshold);
 
+    CV_WRAP virtual void getAllBuckets(std::vector<std::unordered_map<uint32_t, std::vector<uint32_t> > > &buckets);
+    CV_WRAP virtual void copyBuckets(std::vector<std::unordered_map<uint32_t, std::vector<uint32_t> > > buckets, int &accKptIndex);
+    
 protected:
     cvflann::flann_distance_t distType;
     cvflann::flann_algorithm_t algo;

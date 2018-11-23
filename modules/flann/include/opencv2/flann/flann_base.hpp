@@ -217,7 +217,24 @@ public:
     {
         nnIndex_->knnSearch(queries, indices, dists, knn, params);
     }
-
+    void getHashVal(const unsigned char* vec, std::vector<uint32_t> &hashvals) {
+        nnIndex_->getHashVal(vec, hashvals);
+    }
+    void addData(const unsigned char* vec, int idx) {
+        nnIndex_->addData(vec, idx);
+    }
+    void getNeighborsByHash(std::vector<uint32_t> hashvals, int *vec, int vec_actual_count, int *topK, int &idx, int tableThreshold) {
+        nnIndex_->getNeighborsByHash(hashvals, vec, vec_actual_count, topK, idx, tableThreshold);
+    }
+    void getNeighborsByHash(std::vector<uint32_t> hashvals, std::unordered_map<int, int> &matchMap, int *topK, int &idx, int tableThreshold) {
+        nnIndex_->getNeighborsByHash(hashvals, matchMap, topK, idx, tableThreshold);
+    }
+    void getAllBuckets(std::vector<std::unordered_map<uint32_t, std::vector<uint32_t> > > &buckets) {
+        nnIndex_->getAllBuckets(buckets);
+    }
+    void copyBuckets(std::vector<std::unordered_map<uint32_t, std::vector<uint32_t> > > buckets, int &accKptIndex) {
+        nnIndex_->copyBuckets(buckets, accKptIndex);
+    }
     /**
      * \brief Perform radius search
      * \param[in] query The query point

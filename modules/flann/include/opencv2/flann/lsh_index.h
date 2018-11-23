@@ -40,6 +40,7 @@
 #include <cstring>
 #include <map>
 #include <vector>
+#include <unordered_map>
 
 #include "general.h"
 #include "nn_index.h"
@@ -127,20 +128,44 @@ public:
 
     void saveIndex(FILE* stream)
     {
-        save_value(stream,table_number_);
-        save_value(stream,key_size_);
-        save_value(stream,multi_probe_level_);
-        save_value(stream, dataset_);
+//        save_value(stream,table_number_);
+//        save_value(stream,key_size_);
+//        save_value(stream,multi_probe_level_);
+//        save_value(stream, dataset_);
+        
+        fwrite(&table_number_, sizeof(unsigned int), 1, stream);
+        fwrite(&key_size_, sizeof(unsigned int), 1, stream);
+        fwrite(&multi_probe_level_, sizeof(unsigned int), 1, stream);
+        
+        for (unsigned int i = 0; i < table_number_; ++i) {
+            lsh::LshTable<ElementType>& table = tables_[i];
+            table.saveBucket(stream);
+        }
     }
 
     void loadIndex(FILE* stream)
     {
-        load_value(stream, table_number_);
-        load_value(stream, key_size_);
-        load_value(stream, multi_probe_level_);
-        load_value(stream, dataset_);
-        // Building the index is so fast we can afford not storing it
-        buildIndex();
+//        load_value(stream, table_number_);
+//        load_value(stream, key_size_);
+//        load_value(stream, multi_probe_level_);
+//        load_value(stream, dataset_);
+//        // Building the index is so fast we can afford not storing it
+//        buildIndex();
+        
+        
+        fread(&table_number_, sizeof(unsigned int), 1, stream);
+        fread(&key_size_, sizeof(unsigned int), 1, stream);
+        fread(&multi_probe_level_, sizeof(unsigned int), 1, stream);
+        
+        xor_masks_.clear();
+        fill_xor_mask(0, key_size_, multi_probe_level_, xor_masks_);
+        
+        tables_.resize(table_number_);
+        for (unsigned int i = 0; i < table_number_; ++i) {
+            lsh::LshTable<ElementType>& table = tables_[i];
+            table = lsh::LshTable<ElementType>(feature_size_, key_size_);
+            table.loadBucket(stream);
+        }
 
         index_params_["algorithm"] = getType();
         index_params_["table_number"] = table_number_;
@@ -148,6 +173,35 @@ public:
         index_params_["multi_probe_level"] = multi_probe_level_;
     }
 
+    virtual void getAllBuckets(std::vector<std::unordered_map<uint32_t, std::vector<uint32_t> > > &buckets) {
+                
+        for (unsigned int i = 0; i < table_number_; ++i) {
+            std::unordered_map<uint32_t, std::vector<uint32_t> > &bucket = tables_[i].getBucket();
+            buckets.push_back(bucket);
+        }
+    }
+    
+    virtual void copyBuckets(std::vector<std::unordered_map<uint32_t, std::vector<uint32_t> > > buckets, int &accKptIndex) {
+        
+        int appendCount = 0;
+        for (unsigned int i = 0; i < table_number_; ++i) {
+            
+            for (std::unordered_map<uint32_t, std::vector<uint32_t> >::iterator iter=buckets[i].begin(); iter!=buckets[i].end(); iter++) {
+                uint32_t key = iter->first;
+                std::vector<uint32_t> &values = iter->second;
+                std::vector<uint32_t> &dstBuckets = tables_[i].getBucket()[key];
+                if(i==0) {
+                    appendCount += values.size();
+                }
+                for (int j=0; j<(int)values.size(); j++) {
+                    dstBuckets.push_back(values[j] + accKptIndex);
+                }
+            }
+            
+        }
+        accKptIndex += appendCount;
+    }
+    
     /**
      *  Returns size of index.
      */
@@ -221,7 +275,91 @@ public:
     {
         getNeighbors(vec, result);
     }
+    
+    
+    virtual void addData(const unsigned char* vec, int idx) {
+        
+        typename std::vector<lsh::LshTable<ElementType> >::iterator table = tables_.begin();
+        typename std::vector<lsh::LshTable<ElementType> >::iterator table_end = tables_.end();
+        
+        const ElementType *data =(const ElementType *)vec;
+        for (; table != table_end; ++table) {
+            table->add((uint32_t)idx, data);
+        }
+    }
 
+    virtual void getHashVal(const unsigned char* vec, std::vector<uint32_t> &hashvals) {
+        
+        typename std::vector<lsh::LshTable<ElementType> >::const_iterator table = tables_.begin();
+        typename std::vector<lsh::LshTable<ElementType> >::const_iterator table_end = tables_.end();
+        
+        ElementType *data =(ElementType *)vec;
+        for (; table != table_end; ++table) {
+            size_t key = table->getKey(data);
+            hashvals.push_back(key);
+        }
+    }
+    
+    virtual void getNeighborsByHash(std::vector<uint32_t> hashvals, int *vec, int vec_actual_count, int *topK, int &idx, int tableThreshold)
+    {
+        typename std::vector<lsh::LshTable<ElementType> >::const_iterator table = tables_.begin();
+        typename std::vector<lsh::LshTable<ElementType> >::const_iterator table_end = tables_.end();
+        int tableIndex=0;
+        for (; table != table_end; ++table) {
+            size_t key = hashvals[tableIndex];
+            tableIndex++;
+            std::vector<lsh::BucketKey>::const_iterator xor_mask = xor_masks_.begin();
+            std::vector<lsh::BucketKey>::const_iterator xor_mask_end = xor_masks_.end();
+            for (; xor_mask != xor_mask_end; ++xor_mask) {
+                size_t sub_key = key ^ (*xor_mask);
+                const lsh::Bucket* bucket = table->getBucketFromKey((lsh::BucketKey)sub_key);
+                if (bucket == 0) continue;
+                
+                // Go over each descriptor index
+                std::vector<lsh::FeatureIndex>::const_iterator training_index = bucket->begin();
+                std::vector<lsh::FeatureIndex>::const_iterator last_training_index = bucket->end();
+                
+                // Process the rest of the candidates
+                for (; training_index < last_training_index; ++training_index) {
+                    vec[*training_index]++;
+                }
+            }
+        }
+    }
+    
+    virtual void getNeighborsByHash(std::vector<uint32_t> hashvals, std::unordered_map<int, int> &matchMap, int *topK, int &idx, int tableThreshold)
+    {
+        typename std::vector<lsh::LshTable<ElementType> >::const_iterator table = tables_.begin();
+        typename std::vector<lsh::LshTable<ElementType> >::const_iterator table_end = tables_.end();
+        int tableIndex=0;
+        for (; table != table_end; ++table) {
+            size_t key = hashvals[tableIndex];
+            tableIndex++;
+            std::vector<lsh::BucketKey>::const_iterator xor_mask = xor_masks_.begin();
+            std::vector<lsh::BucketKey>::const_iterator xor_mask_end = xor_masks_.end();
+            for (; xor_mask != xor_mask_end; ++xor_mask) {
+                size_t sub_key = key ^ (*xor_mask);
+                const lsh::Bucket* bucket = table->getBucketFromKey((lsh::BucketKey)sub_key);
+                if (bucket == 0) continue;
+                
+                // Go over each descriptor index
+                std::vector<lsh::FeatureIndex>::const_iterator training_index = bucket->begin();
+                std::vector<lsh::FeatureIndex>::const_iterator last_training_index = bucket->end();
+                
+                // Process the rest of the candidates
+                for (; training_index < last_training_index; ++training_index) {
+                    matchMap[*training_index]++;
+                    
+                }
+            }
+        }
+        for (std::unordered_map<int, int>::iterator iter=matchMap.begin(); iter!=matchMap.end(); iter++) {
+            if(iter->second>=tableThreshold) {
+                topK[idx++] = iter->first;
+            }
+        }
+    }
+    
 private:
     /** Defines the comparator on score and index
      */

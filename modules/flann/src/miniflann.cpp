@@ -563,6 +563,30 @@ static void createIndicesDists(OutputArray _indices, OutputArray _dists,
         dists.create( rows, minCols, dtype );
 }
 
+void Index::getHashVal(const unsigned char* vec, std::vector<uint32_t> &hashvals) {
+    
+    ((LshIndex<HammingDistance>*)index)->getHashVal(vec, hashvals);
+}
+
+void Index::addData(const unsigned char* vec, int idx) {
+    ((LshIndex<HammingDistance>*)index)->addData(vec, idx);
+}
+
+void Index::getNeighborsByHash(std::vector<uint32_t> hashvals, int *vec, int vec_actual_count, int *topK, int &idx, int tableThreshold) {
+    ((LshIndex<HammingDistance>*)index)->getNeighborsByHash(hashvals, vec, vec_actual_count, topK, idx, tableThreshold);
+}
+
+void Index::getNeighborsByHash(std::vector<uint32_t> hashvals, std::unordered_map<int, int> &matchMap, int *topK, int &idx, int tableThreshold) {
+    ((LshIndex<HammingDistance>*)index)->getNeighborsByHash(hashvals, matchMap, topK, idx, tableThreshold);
+}
+    
+void Index::getAllBuckets(std::vector<std::unordered_map<uint32_t, std::vector<uint32_t> > > &buckets) {
+    ((LshIndex<HammingDistance>*)index)->getAllBuckets(buckets);
+}
+
+void Index::copyBuckets(std::vector<std::unordered_map<uint32_t, std::vector<uint32_t> > > buckets, int &accKptIndex) {
+    ((LshIndex<HammingDistance>*)index)->copyBuckets(buckets, accKptIndex);
+}
 
 void Index::knnSearch(InputArray _query, OutputArray _indices,
                OutputArray _dists, int knn, const SearchParams& params)
@@ -761,14 +785,14 @@ bool Index::load(InputArray _data, const String& filename)
                   header.data_type == FLANN_FLOAT32 ? CV_32F :
                   header.data_type == FLANN_FLOAT64 ? CV_64F : -1;
 
-    if( (int)header.rows != data.rows || (int)header.cols != data.cols ||
-        featureType != data.type() )
-    {
-        fprintf(stderr, "Reading FLANN index error: the saved data size (%d, %d) or type (%d) is different from the passed one (%d, %d), %d\n",
-                (int)header.rows, (int)header.cols, featureType, data.rows, data.cols, data.type());
-        fclose(fin);
-        return false;
-    }
+//    if( (int)header.rows != data.rows || (int)header.cols != data.cols ||
+//        featureType != data.type() )
+//    {
+//        fprintf(stderr, "Reading FLANN index error: the saved data size (%d, %d) or type (%d) is different from the passed one (%d, %d), %d\n",
+//                (int)header.rows, (int)header.cols, featureType, data.rows, data.cols, data.type());
+//        fclose(fin);
+//        return false;
+//    }
 
     int idistType = 0;
     ::cvflann::load_value(fin, idistType);
