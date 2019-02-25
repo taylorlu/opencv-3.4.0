@@ -110,7 +110,7 @@ public:
      */
     void buildIndex()
     {
-        uint64 RNG_state[10] = {4294967295, 7992299310542102030, 17355616260574310531, 2708759800138032025, 4682447538674946383, 14197390581177801195, 11946231893003579951, 12327127680281918222, 3587653185103865940, 4771810192137487330};
+        uint64 RNG_state[10] = {4294967295ull, 7992299310542102030ull, 17355616260574310531ull, 2708759800138032025ull, 4682447538674946383ull, 14197390581177801195ull, 11946231893003579951ull, 12327127680281918222ull, 3587653185103865940ull, 4771810192137487330ull};
         
         tables_.resize(table_number_);
         for (unsigned int i = 0; i < table_number_; ++i) {
@@ -153,6 +153,7 @@ public:
 //        // Building the index is so fast we can afford not storing it
 //        buildIndex();
         
+        uint64 RNG_state[10] = {4294967295ull, 7992299310542102030ull, 17355616260574310531ull, 2708759800138032025ull, 4682447538674946383ull, 14197390581177801195ull, 11946231893003579951ull, 12327127680281918222ull, 3587653185103865940ull, 4771810192137487330ull};
         
         fread(&table_number_, sizeof(unsigned int), 1, stream);
         fread(&key_size_, sizeof(unsigned int), 1, stream);
@@ -164,7 +165,7 @@ public:
         tables_.resize(table_number_);
         for (unsigned int i = 0; i < table_number_; ++i) {
             lsh::LshTable<ElementType>& table = tables_[i];
-            table = lsh::LshTable<ElementType>(feature_size_, key_size_);
+            table = lsh::LshTable<ElementType>(feature_size_, key_size_, RNG_state[i]);
             table.loadBucket(stream);
         }
 
