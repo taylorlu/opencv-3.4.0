@@ -110,10 +110,12 @@ public:
      */
     void buildIndex()
     {
+        uint64 RNG_state[10] = {4294967295, 7992299310542102030, 17355616260574310531, 2708759800138032025, 4682447538674946383, 14197390581177801195, 11946231893003579951, 12327127680281918222, 3587653185103865940, 4771810192137487330};
+        
         tables_.resize(table_number_);
         for (unsigned int i = 0; i < table_number_; ++i) {
             lsh::LshTable<ElementType>& table = tables_[i];
-            table = lsh::LshTable<ElementType>(feature_size_, key_size_);
+            table = lsh::LshTable<ElementType>(feature_size_, key_size_, RNG_state[i]);
 
             // Add the features to the table
             table.add(dataset_);
@@ -124,7 +126,6 @@ public:
     {
         return FLANN_INDEX_LSH;
     }
-
 
     void saveIndex(FILE* stream)
     {
@@ -276,6 +277,15 @@ public:
         getNeighbors(vec, result);
     }
     
+    virtual void rehash() {
+        
+        typename std::vector<lsh::LshTable<ElementType> >::iterator table = tables_.begin();
+        typename std::vector<lsh::LshTable<ElementType> >::iterator table_end = tables_.end();
+        
+        for (; table != table_end; ++table) {
+            table->rehash();
+        }
+    }
     
     virtual void addData(const unsigned char* vec, int idx) {
         
@@ -469,7 +479,7 @@ private:
             }
         }
     }
-
+    
     /** Performs the approximate nearest-neighbor search.
      * This is a slower version than the above as it uses the ResultSet
      * @param vec the feature to analyze
@@ -486,12 +496,12 @@ private:
                 size_t sub_key = key ^ (*xor_mask);
                 const lsh::Bucket* bucket = table->getBucketFromKey((lsh::BucketKey)sub_key);
                 if (bucket == 0) continue;
-
+                
                 // Go over each descriptor index
                 std::vector<lsh::FeatureIndex>::const_iterator training_index = bucket->begin();
                 std::vector<lsh::FeatureIndex>::const_iterator last_training_index = bucket->end();
                 DistanceType hamming_distance;
-
+                
                 // Process the rest of the candidates
                 for (; training_index < last_training_index; ++training_index) {
                     // Compute the Hamming distance

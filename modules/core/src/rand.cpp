@@ -827,7 +827,7 @@ typedef void (*RandShuffleFunc)( Mat& dst, RNG& rng, double iterFactor );
 
 }
 
-void cv::randShuffle( InputOutputArray _dst, double iterFactor, RNG* _rng )
+void cv::randShuffle( InputOutputArray _dst, double iterFactor, RNG* _rng, uint64 RNG_state)
 {
     CV_INSTRUMENT_REGION()
 
@@ -853,11 +853,23 @@ void cv::randShuffle( InputOutputArray _dst, double iterFactor, RNG* _rng )
     };
 
     Mat dst = _dst.getMat();
-    RNG& rng = _rng ? *_rng : theRNG();
-    CV_Assert( dst.elemSize() <= 32 );
-    RandShuffleFunc func = tab[dst.elemSize()];
-    CV_Assert( func != 0 );
-    func( dst, rng, iterFactor );
+    if(RNG_state != 0) {
+        RNG rng(RNG_state);
+        
+        CV_Assert( dst.elemSize() <= 32 );
+        RandShuffleFunc func = tab[dst.elemSize()];
+        CV_Assert( func != 0 );
+        func( dst, rng, iterFactor );
+    }
+    else {
+        RNG& rng = _rng ? *_rng : theRNG();
+        
+        CV_Assert( dst.elemSize() <= 32 );
+        RandShuffleFunc func = tab[dst.elemSize()];
+        CV_Assert( func != 0 );
+        func( dst, rng, iterFactor );
+    }
+    
 }
 
 CV_IMPL void

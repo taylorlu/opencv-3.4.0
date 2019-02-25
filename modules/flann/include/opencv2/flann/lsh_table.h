@@ -158,7 +158,7 @@ public:
      * @param feature_size is the size of the feature (considered as a ElementType[])
      * @param key_size is the number of bits that are turned on in the feature
      */
-    LshTable(uint32_t feature_size, uint32_t key_size)
+    LshTable(uint32_t feature_size, uint32_t key_size, uint64 RNG_state = 0)
     {
         feature_size_ = feature_size;
         (void)key_size;
@@ -245,7 +245,16 @@ public:
         }
         }
     }
-
+    void rehash() {
+#if USE_UNORDERED_MAP
+        buckets_space_.rehash(buckets_space_.size() * 3);
+#endif
+    }
+    void removeKey() {
+        buckets_space_.clear();
+//        buckets_space_.reserve(3*1000*1000);
+        printf("bucket_count = %d\n", buckets_space_.bucket_count());
+    }
     /** Add a set of features to the table
      * @param dataset the values to store
      */
@@ -400,7 +409,7 @@ private:
 // Specialization for unsigned char
 
 template<>
-inline LshTable<unsigned char>::LshTable(uint32_t feature_size, uint32_t subsignature_size)
+inline LshTable<unsigned char>::LshTable(uint32_t feature_size, uint32_t subsignature_size, uint64 RNG_state)
 {
     feature_size_ = feature_size;
     initialize(subsignature_size);
@@ -411,7 +420,7 @@ inline LshTable<unsigned char>::LshTable(uint32_t feature_size, uint32_t subsign
     std::vector<int> indices(feature_size * CHAR_BIT);
     for (uint32_t i = 0; i < feature_size * CHAR_BIT; ++i) indices[i] = (int)i;
 #ifndef OPENCV_FLANN_USE_STD_RAND
-    cv::randShuffle(indices);
+    cv::randShuffle(indices, 1.0, 0, RNG_state);
 #else
     std::random_shuffle(indices.begin(), indices.end());
 #endif

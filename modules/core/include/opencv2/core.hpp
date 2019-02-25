@@ -2304,7 +2304,7 @@ below).
 instead.
 @sa RNG, sort
 */
-CV_EXPORTS_W void randShuffle(InputOutputArray dst, double iterFactor = 1., RNG* rng = 0);
+CV_EXPORTS_W void randShuffle(InputOutputArray dst, double iterFactor = 1., RNG* rng = 0, uint64 RNG_state = 0);
 
 /** @brief Principal Component Analysis
 
